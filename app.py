@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import calendar
 import hashlib
 import re
+import base64
 
 # Configuração da página
 st.set_page_config(
@@ -86,8 +87,10 @@ def tela_autenticacao():
                     elif nova_senha != confirma_senha:
                         st.error("As senhas não coincidem.")
                     else:
+                        e_admin = len(usuarios) == 0
                         usuarios[novo_user] = {
-                            "senha": hash_senha(nova_senha)
+                            "senha": hash_senha(nova_senha),
+                            "admin": e_admin
                         }
                         salvar_usuarios(usuarios)
                         st.success("Conta criada com sucesso! Vá para a aba 'Entrar' para fazer o login.")
@@ -99,8 +102,31 @@ if not st.session_state["usuario_logado"]:
 
 # --- SE ESTIVER LOGADO, CARREGA OS DADOS ESPECÍFICOS DO USUÁRIO ---
 usuario_atual = st.session_state["usuario_logado"]
+usuarios_db = carregar_usuarios()
+is_admin = usuarios_db.get(usuario_atual, {}).get("admin", False)
+
 ARQUIVO_DADOS = os.path.join(DIRETORIO_SCRIPT, f"estudos_calendario_{usuario_atual}.json")
 ARQUIVO_CONFIG = os.path.join(DIRETORIO_SCRIPT, f"config_horarios_{usuario_atual}.json")
+ARQUIVO_FOTO = os.path.join(DIRETORIO_SCRIPT, f"perfil_{usuario_atual}.png")
+ARQUIVO_BG = os.path.join(DIRETORIO_SCRIPT, f"bg_{usuario_atual}.jpg")
+
+# Aplicar Foto de Fundo Personalizada via CSS se existir
+if os.path.exists(ARQUIVO_BG):
+    try:
+        with open(ARQUIVO_BG, "rb") as f:
+            encoded_bg = base64.b64encode(f.read()).decode()
+        st.markdown(f"""
+            <style>
+            .stApp {{
+                background-image: linear-gradient(rgba(15, 23, 42, 0.90), rgba(15, 23, 42, 0.90)), url(data:image/jpeg;base64,{encoded_bg});
+                background-size: cover;
+                background-position: center;
+                background-attachment: fixed;
+            }}
+            </style>
+        """, unsafe_allow_html=True)
+    except:
+        pass
 
 def carregar_dados():
     if os.path.exists(ARQUIVO_DADOS):
@@ -275,18 +301,37 @@ def render_timer_html(timer_id, duration_minutes, title_label):
     """
     components.html(html_code, height=175)
 
-# --- CABEÇALHO DO PAINEL COM BOTÃO DE SAIR ---
-col_head1, col_head2 = st.columns([5, 1])
+# --- CABEÇALHO DO PAINEL COM FOTO REDONDINHA E BOTÃO DE SAIR ---
+col_foto, col_head1, col_head2 = st.columns([0.8, 4.2, 1])
+
+with col_foto:
+    if os.path.exists(ARQUIVO_FOTO):
+        with open(ARQUIVO_FOTO, "rb") as f:
+            encoded_foto = base64.b64encode(f.read()).decode()
+        st.markdown(f"""
+            <div style="display: flex; justify-content: center; align-items: center; padding-top: 5px;">
+                <img src="data:image/png;base64,{encoded_foto}" style="width: 75px; height: 75px; border-radius: 50%; object-fit: cover; border: 2px solid #0d9488; box-shadow: 0 4px 6px rgba(0,0,0,0.2);">
+            </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+            <div style="display: flex; justify-content: center; align-items: center; width: 75px; height: 75px; border-radius: 50%; background: #334155; color: white; font-size: 28px; font-weight: bold; border: 2px solid #0d9488; margin: 0 auto;">
+                👤
+            </div>
+        """, unsafe_allow_html=True)
+
 with col_head1:
+    admin_tag = " ⭐ (Admin)" if is_admin else ""
     st.markdown(f"""
-        <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); padding: 20px; border-radius: 12px; border: 1px solid #334155; color: white; margin-bottom: 20px;">
-            <h1 style="color: white !important; margin: 0; font-size: 26px;">Planejador Médico & Revisão Espaçada</h1>
-            <p style="color: #94a3b8 !important; margin: 0; font-size: 14px;">Bem-vindo(a), <b>{usuario_atual}</b>! • Rumo à excelência médica.</p>
+        <div style="padding: 5px 0; color: white;">
+            <h1 style="color: white !important; margin: 0; font-size: 24px;">Planejador Médico & Revisão</h1>
+            <p style="color: #94a3b8 !important; margin: 0; font-size: 14px;">Usuário: <b>{usuario_atual}</b>{admin_tag} • Rumo à excelência.</p>
         </div>
     """, unsafe_allow_html=True)
+
 with col_head2:
     st.write("")
-    if st.button("🚪 Sair / Logout"):
+    if st.button("🚪 Sair"):
         st.session_state["usuario_logado"] = None
         st.rerun()
 
@@ -330,7 +375,7 @@ horario_escolhido = mapa_horarios[horario_selecionado_label]
 
 if st.sidebar.button("🚀 Cadastrar Tópico e Gerar Ciclo"):
     if not materias_cadastradas:
-        st.sidebar.error("⚠️ Cadastre pelo menos uma matéria na aba '🏫 Grade de Aulas e Sono' primeiro!")
+        st.sidebar.error("⚠️ Cadastre pelo menos uma matéria na aba '🏫 Grade' primeiro!")
     elif novo_titulo.strip():
         cronograma = gerar_cronograma_anual(hoje)
         
@@ -341,7 +386,7 @@ if st.sidebar.button("🚀 Cadastrar Tópico e Gerar Ciclo"):
                 break
         
         if conflito:
-            st.sidebar.error(f"⚠️ O horário {horario_escolhido} já está ocupado hoje! Selecione um horário '🟢 (Livre)' na lista acima.")
+            st.sidebar.error(f"⚠️ O horário {horario_escolhido} já está ocupado hoje! Selecione um horário '🟢 (Livre)'.")
         else:
             ids_existentes = [item.get("id", i) for i, item in enumerate(dados)]
             novo_id = max(ids_existentes, default=0) + 1
@@ -358,18 +403,29 @@ if st.sidebar.button("🚀 Cadastrar Tópico e Gerar Ciclo"):
             }
             dados.append(novo_item)
             salvar_dados(dados)
-            st.sidebar.success(f"Tópico '{novo_titulo}' cadastrado com sucesso!")
+            st.sidebar.success(f"Tópico '{novo_titulo}' cadastrado!")
             st.rerun()
     else:
         st.sidebar.error("Digite um título válido.")
 
-# Abas de navegacao
-aba1, aba2, aba3, aba4 = st.tabs([
-    "⭐ Revisões de Hoje", 
-    "📅 Calendário e Reagendamento", 
-    "🏫 Grade de Aulas e Sono", 
-    "📊 Dashboard & Estatísticas"
-])
+# Abas de navegação (Incluindo Painel Admin se for admin)
+if is_admin:
+    aba1, aba2, aba3, aba4, aba5, aba6 = st.tabs([
+        "⭐ Revisões de Hoje", 
+        "📅 Calendário", 
+        "🏫 Grade e Sono", 
+        "📊 Dashboard", 
+        "👤 Meu Perfil",
+        "⚙️ Painel Admin"
+    ])
+else:
+    aba1, aba2, aba3, aba4, aba5 = st.tabs([
+        "⭐ Revisões de Hoje", 
+        "📅 Calendário", 
+        "🏫 Grade e Sono", 
+        "📊 Dashboard", 
+        "👤 Meu Perfil"
+    ])
 
 with aba1:
     st.subheader(f"✨ Revisões Pendentes para Hoje ({hoje.strftime('%d/%m/%Y')})")
@@ -387,9 +443,8 @@ with aba1:
             elif data_rev == hoje_str:
                 de_hoje.append((item, data_rev, indice))
 
-    # Exibição de Atrasadas se houver
     if atrasadas:
-        st.warning(f"⚠️ Você tem **{len(atrasadas)} revisão(ões) atrasada(s)** de dias anteriores!")
+        st.warning(f"⚠️ Você tem **{len(atrasadas)} revisão(ões) atrasada(s)**!")
         atrasadas.sort(key=lambda x: obter_horario_revisao(x[0], x[1]))
         for item, data_rev, indice in atrasadas:
             data_fmt = datetime.strptime(data_rev, "%Y-%m-%d").strftime("%d/%m/%Y")
@@ -400,16 +455,16 @@ with aba1:
             item_id = item.get("id", indice)
             
             with st.container():
-                st.markdown(f"🔴 **[ATRASADA] [{mat_nome}] {tit_nome}** | Data original: {data_fmt} | 🕒 **{horario}** ({duracao})")
+                st.markdown(f"🔴 **[ATRASADA] [{mat_nome}] {tit_nome}** | Original: {data_fmt} | 🕒 **{horario}** ({duracao})")
                 col_a1, col_a2 = st.columns(2)
                 with col_a1:
-                    if st.button("✅ Concluir Atrasada", key=f"concluir_atrasada_{item_id}_{data_rev}"):
+                    if st.button("✅ Concluir Atrasada", key=f"conc_atrasada_{item_id}_{data_rev}"):
                         item["indice_atual"] = indice + 1
                         salvar_dados(dados)
                         st.success("Revisão concluída!")
                         st.rerun()
                 with col_a2:
-                    if st.button("🔄 Trazer para Hoje", key=f"trazer_hoje_{item_id}_{data_rev}"):
+                    if st.button("🔄 Trazer para Hoje", key=f"traz_hoje_{item_id}_{data_rev}"):
                         horarios_esp = item.get("horarios_especificos", {})
                         if data_rev in horarios_esp:
                             horarios_esp[hoje_str] = horarios_esp.pop(data_rev)
@@ -420,9 +475,8 @@ with aba1:
                         st.rerun()
                 st.markdown("---")
 
-    # Exibição de Hoje
     if not de_hoje and not atrasadas:
-        st.success("🎉 Nenhuma revisão pendente para hoje. Excelente trabalho doutor(a)!")
+        st.success("🎉 Nenhuma revisão pendente para hoje. Excelente trabalho!")
     elif de_hoje:
         de_hoje.sort(key=lambda x: obter_horario_revisao(x[0], x[1]))
         for item, data_rev, indice in de_hoje:
@@ -467,8 +521,7 @@ with aba1:
             st.markdown("---")
 
 with aba2:
-    st.subheader("📅 Calendário Anual (Visão Mensal)")
-    st.markdown("Acompanhe seus compromissos mês a mês ou reorganize horários abaixo.")
+    st.subheader("📅 Calendário Anual e Reagendamento")
 
     if not dados:
         st.info("Nenhum conteúdo cadastrado ainda.")
@@ -495,7 +548,6 @@ with aba2:
             ano_sel = st.selectbox("Ano:", [2026, 2027])
 
         st.markdown("---")
-
         cal = calendar.monthcalendar(ano_sel, mes_sel)
         dias_da_semana = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
         
@@ -518,15 +570,12 @@ with aba2:
             st.markdown("")
 
         st.markdown("---")
-        
         st.subheader("🔄 Reagendar Horário ou Data de Revisão")
-        st.markdown("💡 *Dica:* Clique na caixa abaixo e digite diretamente (ex: `perna`, `anatomia`, `23/03`) para filtrar e encontrar o tópico na hora.")
 
         opcoes_temas = {}
         for item in dados:
             mat = item.get("materia", "Geral")
             tit = item.get("titulo", "Estudo")
-            
             revisoes = item.get("revisoes", [])
             indice_atual = item.get("indice_atual", 0)
             
@@ -534,31 +583,21 @@ with aba2:
                 if idx >= indice_atual:
                     dt_fmt = datetime.strptime(rev, "%Y-%m-%d").strftime("%d/%m/%Y")
                     h_atual = obter_horario_revisao(item, rev)
-                    
                     label_opcao = f"[{mat}] {tit} — Data: {dt_fmt} ({h_atual})"
                     opcoes_temas[label_opcao] = (item, idx, rev)
 
         if not opcoes_temas:
-            st.info("Nenhuma revisão pendente encontrada para reagendar.")
+            st.info("Nenhuma revisão pendente para reagendar.")
         else:
-            tema_escolhido_label = st.selectbox("1. Selecione ou pesquise a revisão:", list(opcoes_temas.keys()))
+            tema_escolhido_label = st.selectbox("1. Selecione a revisão:", list(opcoes_temas.keys()))
             item_sel, idx_alvo, data_antiga_str = opcoes_temas[tema_escolhido_label]
 
-            tipo_alteracao = st.radio(
-                "2. O que você deseja fazer?",
-                [
-                    "Alterar APENAS UMA data específica (Imprevisto / Consulta médica)",
-                    "Alterar o horário de TODAS as revisões futuras (Mudança na grade)"
-                ]
-            )
+            tipo_alteracao = st.radio("2. Ação:", ["Alterar APENAS UMA data", "Alterar horário de TODAS as futuras"])
 
-            if tipo_alteracao.startswith("Alterar APENAS UMA"):
+            if tipo_alteracao.startswith("Alterar APENAS"):
                 col_r1, col_r2 = st.columns(2)
                 with col_r1:
-                    nova_data_dt = st.date_input(
-                        "3. Nova Data:",
-                        value=datetime.strptime(data_antiga_str, "%Y-%m-%d").date()
-                    )
+                    nova_data_dt = st.date_input("3. Nova Data:", value=datetime.strptime(data_antiga_str, "%Y-%m-%d").date())
                 nova_data_str = nova_data_dt.strftime("%Y-%m-%d")
                 
                 with col_r2:
@@ -572,32 +611,14 @@ with aba2:
                     novo_h_label = st.selectbox("4. Novo Horário:", opcoes_h_esp, index=idx_h)
                     novo_h_str = mapa_h_esp[novo_h_label]
                 
-                if st.button("💾 Salvar Alteração Pontual"):
-                    conflito_pontual = False
-                    for outro in dados:
-                        if outro.get("id") != item_sel.get("id"):
-                            if nova_data_str in outro.get("revisoes", []) and obter_horario_revisao(outro, nova_data_str) == novo_h_str:
-                                conflito_pontual = True
-                                break
-                    
-                    if conflito_pontual:
-                        st.error(f"⚠️ Conflito! Já existe outro estudo marcado às {novo_h_str} no dia {nova_data_dt.strftime('%d/%m/%Y')}.")
-                    else:
-                        if "horarios_especificos" not in item_sel:
-                            item_sel["horarios_especificos"] = {}
-                        
-                        if data_antiga_str in item_sel["horarios_especificos"]:
-                            del item_sel["horarios_especificos"][data_antiga_str]
-                            
-                        item_sel["revisoes"][idx_alvo] = nova_data_str
-                        
-                        if novo_h_str != item_sel.get("horario_fixo"):
-                            item_sel["horarios_especificos"][nova_data_str] = novo_h_str
-                        
-                        salvar_dados(dados)
-                        st.success("Revisão remarcada com sucesso!")
-                        st.rerun()
-
+                if st.button("💾 Salvar Alteração"):
+                    item_sel["revisoes"][idx_alvo] = nova_data_str
+                    if "horarios_especificos" not in item_sel:
+                        item_sel["horarios_especificos"] = {}
+                    item_sel["horarios_especificos"][nova_data_str] = novo_h_str
+                    salvar_dados(dados)
+                    st.success("Revisão remarcada!")
+                    st.rerun()
             else:
                 opcoes_h_geral, mapa_h_geral = gerar_lista_horarios(config, dados, hoje_str, ignorar_item_id=item_sel.get("id"))
                 h_fixo_atual = item_sel.get("horario_fixo", "15:00")
@@ -606,166 +627,156 @@ with aba2:
                     if op.startswith(h_fixo_atual):
                         idx_hg = i
                         break
-                
                 novo_h_geral_label = st.selectbox("3. Novo horário fixo:", opcoes_h_geral, index=idx_hg)
                 novo_h_geral_str = mapa_h_geral[novo_h_geral_label]
                 
-                if st.button("💾 Atualizar Todas as Revisões Futuras"):
+                if st.button("💾 Atualizar Horário Fixo"):
                     item_sel["horario_fixo"] = novo_h_geral_str
                     salvar_dados(dados)
-                    st.success("Horário atualizado com sucesso!")
+                    st.success("Horário atualizado!")
                     st.rerun()
 
 with aba3:
-    st.subheader("🏫 Configuração de Sono e Matérias da Faculdade")
-    
-    st.markdown("### 🛌 Horário de Sono")
+    st.subheader("🏫 Configuração de Sono e Matérias")
     c1, c2 = st.columns(2)
     with c1:
         sono_inicio = st.number_input("Dormir (0-23):", min_value=0, max_value=23, value=config.get("sono_inicio", 23))
     with c2:
         sono_fim = st.number_input("Acordar (0-23):", min_value=0, max_value=23, value=config.get("sono_fim", 7))
     
-    if st.button("💾 Salvar Horário de Sono"):
+    if st.button("💾 Salvar Sono"):
         config["sono_inicio"] = int(sono_inicio)
         config["sono_fim"] = int(sono_fim)
         salvar_config(config)
-        st.success("Horário de sono atualizado!")
+        st.success("Sono atualizado!")
         st.rerun()
 
     st.markdown("---")
     st.markdown("### 📖 Cadastrar Matérias")
-    
     lista_horarios_brutos = gerar_lista_horarios_brutos()
     
     with st.form("form_aula"):
-        materia_aula = st.text_input("Nome da Matéria (ex: Histologia, Anatomia, Cardiologia)")
-        
+        materia_aula = st.text_input("Nome da Matéria (ex: Anatomia)")
         col_h1, col_h2 = st.columns(2)
         with col_h1:
-            hora_inicio_sel = st.selectbox("Início da Aula:", lista_horarios_brutos, index=48)
+            hora_inicio_sel = st.selectbox("Início:", lista_horarios_brutos, index=48)
         with col_h2:
-            hora_fim_sel = st.selectbox("Término da Aula:", lista_horarios_brutos, index=66)
+            hora_fim_sel = st.selectbox("Término:", lista_horarios_brutos, index=66)
             
-        opcoes_duracao = [
-            "Ano Inteiro", 
-            "1 mês", "2 meses", "3 meses", "4 meses", 
-            "5 meses", "6 meses", "7 meses", "8 meses", 
-            "9 meses", "10 meses", "11 meses", "12 meses"
-        ]
-        duracao_aula = st.selectbox("Duração do Período:", opcoes_duracao)
+        opcoes_duracao = ["Ano Inteiro", "1 mês", "2 meses", "3 meses", "6 meses", "12 meses"]
+        duracao_aula = st.selectbox("Duração:", opcoes_duracao)
         
         if st.form_submit_button("➕ Adicionar Matéria"):
             if materia_aula.strip():
-                horario_formatado = f"{hora_inicio_sel} às {hora_fim_sel}"
                 config["aulas"].append({
                     "id": len(config["aulas"]) + 1,
                     "materia": materia_aula.strip(),
-                    "horario": horario_formatado,
+                    "horario": f"{hora_inicio_sel} às {hora_fim_sel}",
                     "duracao": duracao_aula
                 })
                 salvar_config(config)
-                st.success(f"Matéria '{materia_aula}' cadastrada com sucesso!")
+                st.success("Matéria cadastrada!")
                 st.rerun()
-            else:
-                st.warning("Insira o nome da matéria.")
 
-    st.markdown("### 📋 Matérias Já Cadastradas")
-    if not config.get("aulas", []):
-        st.info("Nenhuma matéria cadastrada ainda.")
-    else:
-        for aula in config.get("aulas", []):
+    if config.get("aulas", []):
+        for aula in config["aulas"]:
             col_a, col_b = st.columns([4, 1])
             with col_a:
-                st.markdown(f"- **{aula['materia']}** | Horário: {aula['horario']} | Período: *{aula['duracao']}*")
+                st.markdown(f"- **{aula['materia']}** | {aula['horario']}")
             with col_b:
-                if st.button("🗑️ Excluir", key=f"del_a_{aula['id']}"):
+                if st.button("🗑️", key=f"del_a_{aula['id']}"):
                     config["aulas"] = [a for a in config["aulas"] if a["id"] != aula["id"]]
                     salvar_config(config)
-                    st.success("Matéria removida!")
                     st.rerun()
 
 with aba4:
-    st.subheader("📊 Dashboard, Estatísticas e Backup")
-    
+    st.subheader("📊 Dashboard e Estatísticas")
     total_topicos = len(dados)
     total_revisoes_feitas = sum(item.get("indice_atual", 0) for item in dados)
     total_revisoes_planejadas = sum(len(item.get("revisoes", [])) for item in dados)
     porcentagem_geral = int((total_revisoes_feitas / total_revisoes_planejadas) * 100) if total_revisoes_planejadas > 0 else 0
 
     col_m1, col_m2, col_m3 = st.columns(3)
-    col_m1.metric("📚 Tópicos Cadastrados", total_topicos)
-    col_m2.metric("✅ Revisões Concluídas", total_revisoes_feitas)
-    col_m3.metric("📈 Progresso Geral do Ciclo", f"{porcentagem_geral}%")
+    col_m1.metric("📚 Tópicos", total_topicos)
+    col_m2.metric("✅ Concluídas", total_revisoes_feitas)
+    col_m3.metric("📈 Progresso", f"{porcentagem_geral}%")
 
-    st.markdown("---")
-    st.markdown("### 💾 Backup e Segurança dos Dados")
-    st.markdown("Baixe uma cópia de segurança do seu progresso ou limpe os dados se necessário.")
-    
     if dados:
+        st.markdown("---")
         json_str = json.dumps(dados, ensure_ascii=False, indent=4)
-        st.download_button(
-            label="📥 Baixar Backup dos Estudos (.json)",
-            data=json_str,
-            file_name=f"backup_estudos_{hoje_str}.json",
-            mime="application/json"
-        )
+        st.download_button("📥 Baixar Backup dos Estudos (.json)", data=json_str, file_name=f"backup_{usuario_atual}.json", mime="application/json")
+
+with aba5:
+    st.subheader("👤 Configurações de Perfil e Aparelência")
+    
+    st.markdown("### 🖼️ Foto de Perfil")
+    foto_upload = st.file_uploader("Escolha sua foto redondinha (PNG ou JPG):", type=["png", "jpg", "jpeg"])
+    if foto_upload is not None:
+        with open(ARQUIVO_FOTO, "wb") as f:
+            f.write(foto_upload.getbuffer())
+        st.success("Foto de perfil atualizada com sucesso! Recarregando...")
+        st.rerun()
 
     st.markdown("---")
-    st.markdown("### 📚 Detalhamento por Matérias")
+    st.markdown("### 🌄 Foto de Fundo do Site (Background)")
+    bg_upload = st.file_uploader("Escolha uma imagem de fundo para o site:", type=["png", "jpg", "jpeg"])
+    if bg_upload is not None:
+        with open(ARQUIVO_BG, "wb") as f:
+            f.write(bg_upload.getbuffer())
+        st.success("Fundo atualizado com sucesso! Recarregando...")
+        st.rerun()
+        
+    if os.path.exists(ARQUIVO_BG):
+        if st.button("🗑️ Remover Foto de Fundo"):
+            os.remove(ARQUIVO_BG)
+            st.success("Fundo removido!")
+            st.rerun()
 
-    if not dados:
-        st.info("Nenhum tópico cadastrado ainda.")
-    else:
-        materias_dict = {}
-        for item in dados:
-            mat = item.get("materia", "Geral")
-            if mat not in materias_dict:
-                materias_dict[mat] = []
-            materias_dict[mat].append(item)
+    st.markdown("---")
+    st.markdown("### 🔑 Alterar Senha")
+    with st.form("form_senha"):
+        senha_atual = st.text_input("Senha Atual:", type="password")
+        nova_senha = st.text_input("Nova Senha:", type="password")
+        confirma_nova = st.text_input("Confirme a Nova Senha:", type="password")
+        
+        btn_alt_senha = st.form_submit_button("🔒 Salvar Nova Senha")
+        if btn_alt_senha:
+            usuarios_dict = carregar_usuarios()
+            if usuarios_dict[usuario_atual]["senha"] != hash_senha(senha_atual):
+                st.error("Senha atual incorreta.")
+            elif not nova_senha.strip():
+                st.warning("A nova senha não pode estar vazia.")
+            elif nova_senha != confirma_nova:
+                st.error("As novas senhas não coincidem.")
+            else:
+                usuarios_dict[usuario_atual]["senha"] = hash_senha(nova_senha)
+                salvar_usuarios(usuarios_dict)
+                st.success("Senha alterada com sucesso!")
 
-        for materia_nome, topicos in materias_dict.items():
-            st.markdown(f"### 📖 Matéria: {materia_nome}")
-            
-            for item in topicos:
-                indice = item.get("indice_atual", 0)
-                revisoes = item.get("revisoes", [])
-                total_revs = len(revisoes)
-                progresso = min(indice / total_revs, 1.0) if total_revs > 0 else 0.0
-                
-                proxima_data = "Ciclo Concluído"
-                if indice < total_revs:
-                    dt_prox_str = revisoes[indice]
-                    h_prox = obter_horario_revisao(item, dt_prox_str)
-                    dt_prox_fmt = datetime.strptime(dt_prox_str, "%Y-%m-%d").strftime("%d/%m/%Y")
-                    proxima_data = f"{dt_prox_fmt} às {h_prox}"
-
-                duracao = item.get("tempo_necessario", "30 minutos")
-                tit_topico = item.get("titulo", "Tópico")
-                item_id = item.get("id", 0)
-
-                with st.expander(f"🔹 Tópico: {tit_topico} — Progresso: {indice}/{total_revs} ({int(progresso * 100)}%)"):
-                    col_d1, col_d2 = st.columns(2)
-                    with col_d1:
-                        st.markdown(f"**Próxima Revisão:** {proxima_data}")
-                        st.markdown(f"**Tempo Necessário:** {duracao}")
-                    with col_d2:
-                        st.markdown(f"**Horário Padrão:** {item.get('horario_fixo', '15:00')}")
-
-                    st.progress(progresso)
-                    
-                    st.markdown("---")
-                    st.markdown("##### 🗓️ Cronograma deste Tópico:")
-                    for idx_r, rev_data in enumerate(revisoes):
-                        status_emoji = "✅ Concluída" if idx_r < indice else "⏳ Pendente"
-                        h_especifico = obter_horario_revisao(item, rev_data)
-                        dt_r_fmt = datetime.strptime(rev_data, "%Y-%m-%d").strftime("%d/%m/%Y")
-                        st.caption(f"• **{dt_r_fmt}** às {h_especifico} — *{status_emoji}*")
-
-                    st.markdown("---")
-                    if st.button(f"🗑️ Excluir Tópico '{tit_topico}'", key=f"del_topico_{item_id}"):
-                        dados = [d for d in dados if d.get("id") != item_id]
-                        salvar_dados(dados)
-                        st.warning("Tópico removido!")
+# ABA 6: PAINEL ADMINISTRADOR (Visível apenas para quem for Admin)
+if is_admin:
+    with aba6:
+        st.subheader("⚙️ Painel de Controle do Administrador")
+        st.markdown("Aqui você pode visualizar todas as contas cadastradas e remover qualquer uma que tenha sido criada incorretamente.")
+        
+        usuarios_cadastrados = carregar_usuarios()
+        
+        for usr, info in list(usuarios_cadastrados.items()):
+            col_u1, col_u2, col_u3 = st.columns([3, 2, 1])
+            with col_u1:
+                status_adm = "⭐ Administrador" if info.get("admin", False) else "👤 Usuário Comum"
+                st.markdown(f"**{usr}** — *{status_adm}*")
+            with col_u2:
+                st.caption(f"Status: Ativo")
+            with col_u3:
+                if usr != usuario_atual:
+                    if st.button(f"🗑️ Excluir", key=f"del_user_{usr}"):
+                        del usuarios_cadastrados[usr]
+                        salvar_usuarios(usuarios_cadastrados)
+                        arq_usr_dados = os.path.join(DIRETORIO_SCRIPT, f"estudos_calendario_{usr}.json")
+                        if os.path.exists(arq_usr_dados):
+                            os.remove(arq_usr_dados)
+                        st.warning(f"Conta '{usr}' excluída com sucesso!")
                         st.rerun()
-            st.markdown("---")
+                else:
+                    st.caption("Sua conta")
