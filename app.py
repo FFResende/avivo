@@ -103,7 +103,8 @@ if not st.session_state["usuario_logado"]:
 # --- SE ESTIVER LOGADO, CARREGA OS DADOS ESPECÍFICOS DO USUÁRIO ---
 usuario_atual = st.session_state["usuario_logado"]
 usuarios_db = carregar_usuarios()
-is_admin = usuarios_db.get(usuario_atual, {}).get("admin", False)
+# Define o usuário 'Elber' como administrador automático
+is_admin = usuarios_db.get(usuario_atual, {}).get("admin", False) or usuario_atual.lower() == "elber"
 
 ARQUIVO_DADOS = os.path.join(DIRETORIO_SCRIPT, f"estudos_calendario_{usuario_atual}.json")
 ARQUIVO_CONFIG = os.path.join(DIRETORIO_SCRIPT, f"config_horarios_{usuario_atual}.json")
